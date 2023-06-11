@@ -7,8 +7,9 @@ To use env_extract, add it as a dependency in your Cargo.toml file:
 ```toml
 [dependencies]
 env_extract = "0.1.0"
-Then, you can import the necessary types from the env_extract crate into your Rust code:
 ```
+
+Then, you can import the necessary types from the env_extract crate into your Rust code:
 
 ```rust
 use env_extract::{EnumVariableBuilder, AnyVariableBuilder};
