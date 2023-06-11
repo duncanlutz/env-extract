@@ -1,0 +1,5 @@
+[package]
+name = "env-extract"
+version = "0.1.0"
+authors = ["Duncan Lutz"]
+edition = "2021"
