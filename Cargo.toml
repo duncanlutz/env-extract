@@ -3,6 +3,6 @@ name = "env-extract"
 version = "0.1.0"
 authors = ["Duncan Lutz"]
 edition = "2021"
-description = "Extracts environment variables from a file into Strings or Enums"
+description = "Extracts environment variables into Strings or Enums"
 license = "MIT"
 homepage = "https://github.com/duncanlutz/env-extract/"
