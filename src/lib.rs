@@ -1,472 +1,208 @@
-//! # env_extract
-//! A simple library for extracting environment variables into a more usable format.
-//! This library is especially useful for extracting environment variables into enums.
-//! 
-//! # Examples
-//! 
+//! # env-extract
+//!
+//! This crate provides a procedural macro for deriving the `EnvVar` trait for an enum in Rust.
+//! The `EnvVar` trait allows you to easily retrieve an enum variant based on the value of an environment variable.
+//!
+//! ## Usage
+//!
+//! To use the `EnvVar` macro, add `env-extract` as a dependency in your `Cargo.toml` file:
+//!
+//! ```toml
+//! [dependencies]
+//! env-extract = "0.1.2"
 //! ```
-//! use env_extract::EnumVariableBuilder;
-//! 
-//! std::env::set_var("foo", "bar");
-//! 
-//! #[derive(Debug, Default, Clone)]
-//! enum Foo {
-//!     #[default]
-//!     Bar,
-//!     Baz,
+//!
+//! Then, in your Rust code, import the procedural macro by adding the following line:
+//!
+//! ```rust
+//! use env_extract::EnvVar;
+//! ```
+//!
+//! ## Deriving `EnvVar`
+//!
+//! The `EnvVar` trait can be derived for an enum using the `#[derive(EnvVar)]` attribute.
+//! Each variant of the enum represents a possible value for the environment variable.
+//!
+//! By default, the macro performs an exact case-sensitive comparison between the environment variable value and the enum variant names.
+//! However, you can specify a case conversion for individual enum variants using the `#[case]` attribute.
+//!
+//! ## Case Conversion
+//!
+//! The `#[case]` attribute accepts a `convert` parameter with the following options:
+//!
+//! - `"uppercase"`: Converts the environment variable value to uppercase before comparison.
+//! - `"lowercase"`: Converts the environment variable value to lowercase before comparison.
+//! - `"exact"`: Performs an exact case-sensitive comparison (default).
+//! - `"any"`: Skips case comparison, treating any value of the environment variable as a match.
+//!
+//! ## Examples
+//!
+//! ```rust
+//! use env_extract::EnvVar;
+//!
+//! #[derive(EnvVar)]
+//! enum LogLevel {
+//!     #[case(convert = "uppercase")]
+//!     Error,
+//!     #[case(convert = "uppercase")]
+//!     Warning,
+//!     #[case(convert = "uppercase")]
+//!     Info,
 //! }
-//! 
-//! let foo = EnumVariableBuilder::default()
-//!     .name("foo".to_string())
-//!     .add_option("bar".to_string(), Foo::Bar)
-//!     .add_option("baz".to_string(), Foo::Baz)
-//!     .build()
-//!     .unwrap();
-//! 
-//! assert!(matches!(foo, Foo::Bar));
+//!
+//! fn main() {
+//!     match LogLevel::get() {
+//!         Ok(LogLevel::Error) => eprintln!("An error occurred"),
+//!         Ok(LogLevel::Warning) => eprintln!("Warning: Something may not be right"),
+//!         Ok(LogLevel::Info) => eprintln!("Informational message"),
+//!         Err(err) => eprintln!("Invalid log level: {}", err),
+//!     }
+//! }
 //! ```
-//! 
-//! ```
-//! use env_extract::AnyVariableBuilder;
-//! 
-//! std::env::set_var("foo", "bar");
-//! 
-//! let foo = AnyVariableBuilder::default()
-//!    .name("foo".to_string())
-//!    .build()
-//!    .unwrap();
-//! 
-//! assert_eq!(foo, "bar");
-//! ```
+//!
+//! In this example, the `LogLevel` enum is derived using the `EnvVar` macro.
+//! Each variant is annotated with the `#[case]` attribute and set to convert the environment variable value to uppercase before comparison.
+//! The `get()` method is then used to retrieve the appropriate log level based on the environment variable value.
+//! If the environment variable matches one of the enum variants, the corresponding action is performed.
+//! Otherwise, an error message is printed indicating an invalid log level.
+//!
 
-pub use crate::types::{AnyEnvironmentVariable, AnyVariableBuilder, EnumEnvironmentVariable, EnumVariableBuilder, EnvironmentVariable};
+use proc_macro::TokenStream;
+use quote::quote;
+use syn::{parse_macro_input, Attribute, DeriveInput, Lit, Meta, MetaNameValue};
 
-pub mod types {
+/// This macro derives the `EnvVar` trait for an enum, allowing you to easily retrieve an enum variant based on the value of an environment variable.
+/// The `EnvVar` trait provides a `get()` method that returns a `Result` indicating whether the environment variable value matches any of the enum variants.
+///
+/// # Usage
+///
+/// The `EnvVar` trait can be derived for an enum by using the `#[derive(EnvVar)]` attribute.
+/// Each variant of the enum represents a possible value for the environment variable.
+///
+/// ## Case Conversion
+///
+/// By default, the macro performs an exact case-sensitive comparison between the environment variable value and the enum variant names.
+/// However, you can specify a case conversion for individual enum variants using the `#[case]` attribute.
+/// The `#[case]` attribute accepts a `convert` parameter with the following options:
+///
+/// - `"uppercase"`: Converts the environment variable value to uppercase before comparison.
+/// - `"lowercase"`: Converts the environment variable value to lowercase before comparison.
+/// - `"exact"`: Performs an exact case-sensitive comparison (default).
+/// - `"any"`: Converts both the environment variable value and the enum variant name to lowercase before comparison, treating any value of the environment variable as a match.
+///
+/// # Examples
+///
+/// ```rust
+/// use env_extract::EnvVar;
+///
+/// #[derive(EnvVar)]
+/// enum LogLevel {
+///     #[case(convert = "uppercase")]
+///     Error,
+///     #[case(convert = "uppercase")]
+///     Warning,
+///     #[case(convert = "uppercase")]
+///     Info,
+/// }
+///
+/// fn main() {
+///     match LogLevel::get() {
+///         Ok(LogLevel::Error) => eprintln!("An error occurred"),
+///         Ok(LogLevel::Warning) => eprintln!("Warning: Something may not be right"),
+///         Ok(LogLevel::Info) => eprintln!("Informational message"),
+///         Err(err) => eprintln!("Invalid log level: {}", err),
+///     }
+/// }
+/// ```
+///
+/// In this example, the `LogLevel` enum is derived using the `EnvVar` macro.
+/// Each variant is annotated with the `#[case]` attribute and set to convert the environment variable value to uppercase before comparison.
+/// The `get()` method is then used to retrieve the appropriate log level based on the environment variable value.
+/// If the environment variable matches one of the enum variants, the corresponding action is performed.
+/// Otherwise, an error message is printed indicating an invalid log level.
+#[proc_macro_derive(EnvVar, attributes(case))]
+pub fn enum_from_env(input: TokenStream) -> TokenStream {
+    let input = parse_macro_input!(input as DeriveInput);
 
-    /// Validates that a given environment variable is set to a valid value, and returns the matching Enum value.
-    /// The valid arguments are a vector of tuples containing the string value and the Enum value.
-    /// 
-    /// # Examples
-    /// 
-    /// ```
-    /// use env_extract::EnumEnvironmentVariable;
-    /// 
-    /// std::env::set_var("foo", "bar");
-    /// 
-    /// #[derive(Debug, Default, Clone)]
-    /// enum Foo {
-    ///    #[default]
-    ///    Bar,
-    ///    Baz,
-    /// }
-    /// 
-    /// let foo = EnumEnvironmentVariable::new("foo".to_string(), vec![
-    ///    ("bar".to_string(), Foo::Bar),
-    ///    ("baz".to_string(), Foo::Baz),
-    /// ]).validate().unwrap();
-    /// 
-    /// assert!(matches!(foo, Foo::Bar));
-    /// ```
-    #[derive(Debug, Default)]
-    pub struct EnumEnvironmentVariable<T> {
-        pub name: String,
-        pub valid_options: Vec<(String, T)>,
-    }
+    let enum_name = &input.ident;
+    let enum_name_upper = enum_name.to_string().to_uppercase();
+    let variants = match input.data {
+        syn::Data::Enum(ref variants) => &variants.variants,
+        _ => panic!("EnvVar can only be derived for enums"),
+    };
 
-    /// Creates a new EnumEnvironmentVariable. Use this if you want to use the builder pattern.
-    /// The valid arguments are a vector of tuples containing the string value and the Enum value.
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// use env_extract::EnumVariableBuilder;
-    ///
-    /// std::env::set_var("foo", "bar");
-    ///
-    /// #[derive(Debug, Default, Clone)]
-    /// enum Foo {
-    ///     #[default]
-    ///     Bar,
-    ///     Baz,
-    /// }
-    ///
-    /// let foo = EnumVariableBuilder::default()
-    ///     .name("foo".to_string())
-    ///     .add_option("bar".to_string(), Foo::Bar)
-    ///     .add_option("baz".to_string(), Foo::Baz)
-    ///     .build()
-    ///     .unwrap();
-    ///
-    /// assert!(matches!(foo, Foo::Bar));
-    #[derive(Debug, Default)]
-    pub struct EnumVariableBuilder<T> {
-        pub name: String,
-        pub valid_options: Vec<(String, T)>,
-    }
+    let mut check_variants = Vec::new();
+    for variant in variants {
+        if let syn::Fields::Unit = variant.fields {
+            let variant_name = &variant.ident;
 
-    /// Validates that a given environment variable is set to a valid value.
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// use env_extract::AnyEnvironmentVariable;
-    ///
-    /// std::env::set_var("foo", "bar");
-    ///
-    /// let foo = AnyEnvironmentVariable::new("foo".to_string());
-    ///
-    /// assert_eq!(foo.validate().unwrap(), "bar");
-    #[derive(Debug)]
-    pub struct AnyEnvironmentVariable {
-        pub name: String,
-    }
+            let case = get_case_conversion(&variant.attrs);
 
-    /// Creates a new AnyEnvironmentVariable. Use this if you want to use the builder pattern.
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// use env_extract::AnyVariableBuilder;
-    ///
-    /// std::env::set_var("foo", "bar");
-    ///
-    /// let foo = AnyVariableBuilder::default()
-    ///     .name("foo".to_string())
-    ///     .build()
-    ///     .unwrap();
-    ///
-    /// assert_eq!(foo, "bar");
-    #[derive(Debug, Default)]
-    pub struct AnyVariableBuilder {
-        pub name: String,
-    }
-
-    /// Generic struct for creating and validating environment variables.
-    /// It is recommended to use either the AnyVariableBuilder or EnumVariableBuilder instead of this struct.
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// use env_extract::EnvironmentVariable;
-    ///
-    /// std::env::set_var("foo", "bar");
-    ///
-    /// let foo = EnvironmentVariable::<String>::new_any_value_variable("foo".to_string()).unwrap();
-    ///
-    /// assert_eq!(foo, "bar");
-    #[derive(Debug, Default)]
-    pub struct EnvironmentVariable<T> {
-        pub name: String,
-        pub valid_options: Option<Vec<(String, T)>>,
-    }
-}
-
-mod environment_variables {
-    pub use std::{cmp, error::Error};
-    use crate::types::{AnyEnvironmentVariable, AnyVariableBuilder, EnumEnvironmentVariable, EnumVariableBuilder, EnvironmentVariable};
-
-    impl<T: Clone> EnumEnvironmentVariable<T> {
-        /// Creates a new EnumEnvironmentVariable with the specified name and valid arguments.
-        /// The valid arguments are a vector of tuples containing the string value and the Enum value.
-        ///
-        /// # Examples
-        ///
-        /// ```
-        /// use env_extract::EnumEnvironmentVariable;
-        ///
-        /// std::env::set_var("foo", "bar");
-        ///
-        /// #[derive(Debug, Default, Clone)]
-        /// enum Foo{
-        ///     #[default]
-        ///     Bar,
-        ///     Baz,
-        /// }
-        ///
-        /// let foo = EnumEnvironmentVariable::new("foo".to_string(), vec![
-        ///     ("bar".to_string(), Foo::Bar),
-        ///     ("baz".to_string(), Foo::Baz),
-        ///     ]);
-        ///
-        /// assert!(foo.validate().is_ok());
-        pub fn new(name: String, valid_options: Vec<(String, T)>) -> Self {
-            Self {
-                name: name,
-                valid_options: valid_options,
-            }
-        }
-
-        /// Validates a given environment variable and returns the matching Enum value if it is valid.
-        ///
-        /// # Errors
-        ///
-        /// Returns an error if the environment variable is not set, or if the value is not a valid value.
-        ///
-        /// # Examples
-        ///
-        /// ```
-        /// use env_extract::EnumVariableBuilder;
-        ///
-        /// std::env::set_var("foo", "bar");
-        ///
-        /// #[derive(Debug, Default, Clone)]
-        /// enum Foo {
-        ///     #[default]
-        ///     Bar,
-        ///     Baz,
-        /// }
-        ///
-        /// let foo = EnumVariableBuilder::default()
-        ///     .name("foo".to_string())
-        ///     .add_option("bar".to_string(), Foo::Bar)
-        ///     .add_option("baz".to_string(), Foo::Baz)
-        ///     .build()
-        ///     .unwrap();
-        ///
-        /// assert!(matches!(foo, Foo::Bar));
-        /// ```
-        pub fn validate(&self) -> Result<T, Box<dyn std::error::Error>> {
-            let variable = match std::env::var(&self.name) {
-                Ok(name) => name,
-                Err(e) => return Err(Box::from(e)),
+            let variant_case_conversion = match case {
+                CaseConversion::Uppercase => quote! { .to_uppercase() },
+                CaseConversion::Lowercase => quote! { .to_lowercase() },
+                CaseConversion::Exact => quote! {},
+                CaseConversion::Any => quote! { .to_lowercase() },
             };
 
-            let result: Option<T> = match &self.valid_options.len().cmp(&0) {
-                cmp::Ordering::Equal => {
-                    return Err(Box::from(format!(
-                        "Length of valid_options was zero in environment variable '{}'",
-                        &self.name
-                    )))
+            let var_case_conversion = if let CaseConversion::Any = case {
+                quote! { .to_lowercase() }
+            } else {
+                quote! {}
+            };
+
+            check_variants.push(quote! {
+                if match std::env::var(#enum_name_upper) { Ok(v) => { Some((v)#var_case_conversion) }, Err(..) => None}.as_deref() == Some(&(stringify!(#variant_name)#variant_case_conversion)[..]) {
+                    return Ok(#enum_name::#variant_name);
                 }
-                cmp::Ordering::Less => {
-                    return Err(Box::from(format!(
-                "Length of ValidArguments was somehow less than zero in environment variable '{}'",
-                &self.name
-            )))
-                }
-                cmp::Ordering::Greater => {
-                    let filtered_args: Vec<&(String, T)> = self
-                        .valid_options
-                        .iter()
-                        .filter(|(n, _e)| n == &variable)
-                        .collect();
-                    match filtered_args.len().cmp(&1) {
-                        cmp::Ordering::Equal => Some(filtered_args[0].1.clone()),
-                        cmp::Ordering::Greater => return Err(Box::from(format!("Found more than one ValidArgument with the same variable name for environment variable '{}'", &self.name))),
-                        cmp::Ordering::Less => return Err(Box::from(format!("Could not find valid Enum value with result '{}' for environment variable '{}'. Check that variable is set to a valid value.", variable, &self.name)))
+            });
+        }
+    }
+
+    let expanded = quote! {
+        impl #enum_name {
+            fn get() -> Result<Self, String> {
+                #(#check_variants)*
+                Err("Invalid environment variable value".to_string())
+            }
+        }
+    };
+
+    TokenStream::from(expanded)
+}
+
+enum CaseConversion {
+    Uppercase,
+    Lowercase,
+    Exact,
+    Any,
+}
+
+fn get_case_conversion(attrs: &[Attribute]) -> CaseConversion {
+    for attr in attrs {
+        if let Ok(Meta::List(meta_list)) = attr.parse_meta() {
+            if meta_list.path.is_ident("case") {
+                for nested_meta in meta_list.nested {
+                    if let syn::NestedMeta::Meta(Meta::NameValue(MetaNameValue {
+                        path,
+                        lit: Lit::Str(value),
+                        ..
+                    })) = nested_meta
+                    {
+                        if path.is_ident("convert") {
+                            match value.value().as_str() {
+                                "uppercase" => return CaseConversion::Uppercase,
+                                "lowercase" => return CaseConversion::Lowercase,
+                                "exact" => return CaseConversion::Exact,
+                                "any" => return CaseConversion::Any,
+                                _ => panic!("Invalid case conversion specified"),
+                            }
+                        }
                     }
                 }
-            };
-
-            match result {
-                Some(v) => Ok(v),
-                None => {
-                    return Err(Box::from(format!(
-                        "Found invalid value '{}' for environment variable '{}'",
-                        variable, &self.name
-                    )))
-                }
             }
         }
     }
 
-    impl<T: Clone> EnumVariableBuilder<T> {
-        /// Creates a new EnumVariableBuilder with the specified name and valid arguments.
-        /// The valid arguments are a vector of tuples containing the string value and the Enum value.
-        ///
-        /// # Examples
-        ///
-        /// ```
-        /// use env_extract::EnumVariableBuilder;
-        ///
-        /// std::env::set_var("foo", "bar");
-        ///
-        /// #[derive(Debug, Default, Clone)]
-        /// enum Foo{
-        ///     #[default]
-        ///     Bar,
-        ///     Baz,
-        /// }
-        ///
-        /// let foo = EnumVariableBuilder::new("foo".to_string(), vec![
-        ///     ("bar".to_string(), Foo::Bar),
-        ///     ("baz".to_string(), Foo::Baz),
-        ///     ])
-        ///     .build()
-        ///     .unwrap();
-        ///
-        /// assert!(matches!(foo, Foo::Bar));
-        pub fn new(name: String, valid_options: Vec<(String, T)>) -> Self {
-            Self {
-                name: name,
-                valid_options: valid_options,
-            }
-        }
-
-        /// Sets the name of the environment variable.
-        pub fn name(&mut self, value: String) -> &mut Self {
-            self.name = value;
-            self
-        }
-
-        /// Sets the valid arguments of the environment variable (this overwrites any current arguments with a new Vector).
-        pub fn set_arguments(&mut self, values: Vec<(String, T)>) -> &mut Self {
-            self.valid_options = values;
-            self
-        }
-
-        /// Adds a valid argument to the environment variable.
-        pub fn add_option(&mut self, string_value: String, enum_value: T) -> &mut Self {
-            self.valid_options.push((string_value, enum_value));
-            self
-        }
-
-        /// Builds the EnumEnvironmentVariable, then validates it.
-        pub fn build(&self) -> Result<T, Box<dyn Error>> {
-            EnvironmentVariable::new_enumerated_variable(
-                self.name.clone(),
-                self.valid_options.clone(),
-            )
-        }
-    }
-
-    impl AnyEnvironmentVariable {
-        /// Creates a new AnyEnvironmentVariable with the specified name.
-        pub fn new(name: String) -> Self {
-            Self { name }
-        }
-
-        /// Validates the environment variable, returning the value if it is valid.
-        pub fn validate(&self) -> Result<String, Box<dyn Error>> {
-            match std::env::var(&self.name) {
-                Ok(val) => Ok(val),
-                Err(e) => Err(Box::from(e)),
-            }
-        }
-    }
-
-    impl AnyVariableBuilder {
-        /// Creates a new AnyVariableBuilder with the specified name.
-        pub fn new(name: String) -> Self {
-            Self { name: name }
-        }
-
-        /// Sets the name of the environment variable.
-        pub fn name(&mut self, value: String) -> &mut Self {
-            self.name = value;
-            self
-        }
-
-        /// Sets the name of the environment variable.
-        pub fn build(&self) -> Result<String, Box<dyn Error>> {
-            EnvironmentVariable::<String>::new_any_value_variable(self.name.clone())
-        }
-    }
-
-    impl<T: Clone> EnvironmentVariable<T> {
-        /// Creates a new EnumEnvironmentVariable with the specified name and valid arguments, then validates it.
-        ///
-        /// # Examples
-        ///
-        /// ```
-        /// use env_extract::EnvironmentVariable;
-        ///
-        /// std::env::set_var("foo", "bar");
-        ///
-        /// #[derive(Debug, Default, Clone)]
-        /// enum Foo{
-        ///     #[default]
-        ///     Bar,
-        ///     Baz,
-        /// }
-        ///
-        /// let foo = EnvironmentVariable::<Foo>::new_enumerated_variable("foo".to_string(), vec![
-        ///    ("bar".to_string(), Foo::Bar),
-        ///    ("baz".to_string(), Foo::Baz),
-        /// ]).unwrap();
-        ///
-        /// assert!(matches!(foo, Foo::Bar));
-        pub fn new_enumerated_variable(
-            name: String,
-            valid_options: Vec<(String, T)>,
-        ) -> Result<T, Box<dyn Error>> {
-            match EnumEnvironmentVariable::new(name, valid_options).validate() {
-                Ok(v) => Ok(v),
-                Err(e) => Err(e),
-            }
-        }
-
-        /// Creates a new AnyEnvironmentVariable with the specified name, then validates it.
-        ///
-        /// # Examples
-        ///
-        /// ```
-        /// use env_extract::EnvironmentVariable;
-        ///
-        /// std::env::set_var("foo", "bar");
-        ///
-        /// let foo = EnvironmentVariable::<String>::new_any_value_variable("foo".to_string()).unwrap();
-        ///
-        /// assert_eq!(foo, "bar");
-        pub fn new_any_value_variable(name: String) -> Result<String, Box<dyn Error>> {
-            match AnyEnvironmentVariable::new(name).validate() {
-                Ok(v) => Ok(v),
-                Err(e) => Err(e),
-            }
-        }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use crate::{AnyVariableBuilder, EnumVariableBuilder};
-
-    #[derive(Debug, Default, Clone)]
-    enum Hello {
-        #[default]
-        World,
-        There,
-        Honey,
-    }
-
-    #[test]
-    fn enum_variable_returns_correct() {
-        std::env::set_var("hello", "world");
-
-        assert!(matches!(
-            EnumVariableBuilder::default()
-                .name(String::from("hello"))
-                .add_option(String::from("world"), Hello::World)
-                .add_option(String::from("there"), Hello::There)
-                .add_option(String::from("honey"), Hello::Honey)
-                .build()
-                .unwrap(),
-            Hello::World
-        ));
-    }
-
-    #[test]
-    fn invalid_enum_variable_value_fails() {
-        std::env::set_var("hello", "ap;wo3infapowei");
-
-        assert!(EnumVariableBuilder::default()
-            .name(String::from("hello"))
-            .add_option(String::from("world"), Hello::World)
-            .add_option(String::from("there"), Hello::There)
-            .add_option(String::from("honey"), Hello::Honey)
-            .build()
-            .is_err())
-    }
-
-    #[test]
-    fn any_type_variable_returns_correct() {
-        std::env::set_var("hello", "honey");
-
-        assert_eq!(
-            AnyVariableBuilder::new(String::from("hello"))
-                .build()
-                .unwrap(),
-            String::from("honey")
-        );
-    }
+    CaseConversion::Exact
 }
