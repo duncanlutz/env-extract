@@ -1,71 +1,60 @@
-env_extract
-env_extract is a Rust library that provides a convenient way to extract environment variables into a more usable format. It is particularly useful for extracting environment variables into enums.
+# env-extract
 
-Usage
-To use env_extract, add it as a dependency in your Cargo.toml file:
+This crate provides a procedural macro for deriving the `EnvVar` trait for an enum in Rust. The `EnvVar` trait allows you to easily retrieve an enum variant based on the value of an environment variable.
+
+## Usage
+
+To use the `EnvVar` macro, add `env-extract` as a dependency in your `Cargo.toml` file:
 
 ```toml
 [dependencies]
-env_extract = "0.1.0"
+env-extract = "0.1.2"
 ```
 
-Then, you can import the necessary types from the env_extract crate into your Rust code:
+Then, in your Rust code, import the procedural macro by adding the following line:
 
 ```rust
-use env_extract::{EnumVariableBuilder, AnyVariableBuilder};
+use env_extract::EnvVar;
 ```
 
-Examples
-Here are a couple of examples to demonstrate how to use env_extract:
+## Deriving EnvVar
 
-Extracting an Enum Environment Variable
+The `EnvVar` trait can be derived for an enum using the `#[derive(EnvVar)]` attribute. Each variant of the enum represents a possible value for the environment variable.
+
+By default, the macro performs an exact case-sensitive comparison between the environment variable value and the enum variant names. However, you can specify a case conversion for individual enum variants using the `#[case]` attribute.
+
+## Case Conversion
+
+The `#[case]` attribute accepts a `convert` parameter with the following options:
+
+- `"uppercase"`: Converts the environment variable value to uppercase before comparison.
+- `"lowercase"`: Converts the environment variable value to lowercase before comparison.
+- `"exact"`: Performs an exact case-sensitive comparison (default).
+- `"any"`: Skips case comparison, treating any value of the environment variable as a match.
+
+## Examples
 
 ```rust
-use env_extract::EnumVariableBuilder;
+use env_extract::EnvVar;
 
-std::env::set_var("foo", "bar");
-
-#[derive(Debug, Default, Clone)]
-enum Foo {
-    #[default]
-    Bar,
-    Baz,
+#[derive(EnvVar)]
+enum LogLevel {
+    #[case(convert = "uppercase")]
+    Error,
+    #[case(convert = "uppercase")]
+    Warning,
+    #[case(convert = "uppercase")]
+    Info,
 }
 
-let foo = EnumVariableBuilder::default()
-    .name("foo".to_string())
-    .add_option("bar".to_string(), Foo::Bar)
-    .add_option("baz".to_string(), Foo::Baz)
-    .build()
-    .unwrap();
-
-assert!(matches!(foo, Foo::Bar));
+fn main() {
+    match LogLevel::get() {
+        Ok(LogLevel::Error) => eprintln!("An error occurred"),
+        Ok(LogLevel::Warning) => eprintln!("Warning: Something may not be right"),
+        Ok(LogLevel::Info) => eprintln!("Informational message"),
+        Err(err) => eprintln!("Invalid log level: {}", err),
+    }
+}
 ```
 
-Extracting Any Environment Variable
-
-```rust
-use env_extract::AnyVariableBuilder;
-
-std::env::set_var("foo", "bar");
-
-let foo = AnyVariableBuilder::default()
-   .name("foo".to_string())
-   .build()
-   .unwrap();
-
-assert_eq!(foo, "bar");
-```
-
-Crate Features
-None
-For more details and additional options, please refer to the full documentation.
-
-License
-This crate is distributed under the terms of the MIT license.
-
-Please feel free to contribute by opening issues or submitting pull requests on the GitHub repository.
-
-If you have any questions or need further assistance, don't hesitate to reach out.
-
-Enjoy using env_extract!
+In this example, the `LogLevel` enum is derived using the `EnvVar` macro. Each variant is annotated with the `#[case]` attribute and set to convert the environment variable value to uppercase before comparison. The `get()` method is then used to retrieve the appropriate log level based on the environment variable value. If the environment variable matches one of the enum variants, the corresponding action is performed. Otherwise, an error message is printed indicating an invalid log level.
